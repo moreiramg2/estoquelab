@@ -24,7 +24,6 @@ sheet = client.open_by_key(SHEET_ID).sheet1
 # =========================
 # FUNÇÃO PRA CARREGAR DADOS
 # =========================
-@st.cache_data(ttl=60)
 def load_data():
     data = sheet.get_all_records()
     df = pd.DataFrame(data)
@@ -32,9 +31,18 @@ def load_data():
     if df.empty:
         return pd.DataFrame(columns=["nome", "lote", "quantidade", "status_validacao"])
 
+    # Padroniza nomes das colunas
+    df.columns = df.columns.str.strip().str.lower()
+
     return df
 
 df = load_data()
+
+# =========================
+# FILTRA ITENS COM QUANTIDADE > 0
+# =========================
+if not df.empty:
+    df = df[df["quantidade"] > 0]
 
 # =========================
 # TÍTULO
@@ -76,6 +84,8 @@ st.subheader("📦 Estoque atual")
 if not df.empty:
     df["id_item"] = df["nome"].astype(str) + " | Lote: " + df["lote"].astype(str)
     st.dataframe(df)
+else:
+    st.info("Nenhum item cadastrado ainda.")
 
 # =========================
 # RETIRAR REAGENTE
@@ -97,7 +107,6 @@ if not df.empty:
     if st.button("Retirar"):
 
         idx = df[df["id_item"] == item_selecionado].index[0]
-
         quantidade_atual = int(df.loc[idx, "quantidade"])
 
         if quantidade_retirada > quantidade_atual:
@@ -108,16 +117,13 @@ if not df.empty:
 
             if nova_qtd == 0:
                 # Deleta linha quando zera
-                sheet.delete_rows(idx + 2)
-                st.warning("🗑️ Lote zerado e removido!")
+                sheet.delete_rows(int(idx) + 2)
+                st.warning("🗑️ Lote zerado e removido do estoque!")
 
             else:
                 # Atualiza quantidade
-                sheet.update_cell(idx + 2, 3, int(nova_qtd))
+                sheet.update_cell(int(idx) + 2, 3, int(nova_qtd))
                 st.success("✅ Estoque atualizado!")
 
             st.cache_data.clear()
             st.rerun()
-
-else:
-    st.info("Nenhum item cadastrado ainda.")
