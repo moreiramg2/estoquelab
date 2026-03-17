@@ -111,7 +111,11 @@ st.subheader("➖ Retirar do estoque")
 if not df.empty:
 
     # Criar identificação única (nome + lote)
-    df["id_item"] = df["nome"] + " | Lote: " + df["lote"]
+    df["id_item"] = (
+    df["nome"].fillna("Sem nome").astype(str) +
+    " | Lote: " +
+    df["lote"].fillna("Sem lote").astype(str)
+)
 
     item_selecionado = st.selectbox(
         "Selecione o item",
