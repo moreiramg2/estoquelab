@@ -6,7 +6,7 @@ from google.oauth2.service_account import Credentials
 # =========================
 # CONFIG GOOGLE SHEETS
 # =========================
-SHEET_ID = "1tmsV_1h78N3NINJZ6yj6OUGOVxbgeQQikadIzTEKyGk"
+SHEET_ID = "COLE_AQUI_O_ID_DA_PLANILHA"
 
 scope = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -77,13 +77,26 @@ with st.form("add_form"):
         st.rerun()
 
 # =========================
-# MOSTRAR ESTOQUE
+# MOSTRAR ESTOQUE COM CORES
 # =========================
 st.subheader("📦 Estoque atual")
 
 if not df.empty:
     df["id_item"] = df["nome"].astype(str) + " | Lote: " + df["lote"].astype(str)
-    st.dataframe(df)
+
+    # Função pra colorir status
+    def highlight_status(val):
+        if val == "Reprovado":
+            return "color: red; font-weight: bold"
+        elif val == "Aprovado":
+            return "color: green; font-weight: bold"
+        elif val == "Pendente":
+            return "color: orange; font-weight: bold"
+        else:
+            return ""
+
+    # Aplica cores na coluna de status
+    st.dataframe(df.style.applymap(highlight_status, subset=["status_validacao"]))
 else:
     st.info("Nenhum item cadastrado ainda.")
 
