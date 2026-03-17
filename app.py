@@ -16,7 +16,7 @@ creds = ServiceAccountCredentials.from_json_keyfile_dict(
 client = gspread.authorize(creds)
 
 # 🔴 COLE O ID DA SUA PLANILHA AQUI
-SHEET_ID = 1tmsV_1h78N3NINJZ6yj6OUGOVxbgeQQikadIzTEKyGk
+SHEET_ID = "1tmsV_1h78N3NINJZ6yj6OUGOVxbgeQQikadIzTEKyGk"
 
 sheet = client.open_by_key(SHEET_ID).sheet1
 
