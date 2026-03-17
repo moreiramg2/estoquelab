@@ -105,3 +105,39 @@ if busca:
 
 # ===== TABELA =====
 st.dataframe(df, use_container_width=True)
+st.divider()
+st.subheader("➖ Retirar do estoque")
+
+if not df.empty:
+
+    # Criar identificação única (nome + lote)
+    df["id_item"] = df["nome"] + " | Lote: " + df["lote"]
+
+    item_selecionado = st.selectbox(
+        "Selecione o item",
+        df["id_item"]
+    )
+
+    quantidade_retirada = st.number_input(
+        "Quantidade a retirar",
+        min_value=0
+    )
+
+    if st.button("Retirar"):
+
+        # Encontrar índice do item
+        idx = df[df["id_item"] == item_selecionado].index[0]
+
+        quantidade_atual = df.loc[idx, "quantidade_atual"]
+
+        if quantidade_retirada > quantidade_atual:
+            st.error("❌ Quantidade maior que o estoque!")
+        else:
+            nova_qtd = quantidade_atual - quantidade_retirada
+
+            # Atualiza na planilha
+            sheet.update_cell(idx + 2, 3, nova_qtd)
+
+            st.success("✅ Estoque atualizado!")
+            st.cache_data.clear()
+            st.rerun()
