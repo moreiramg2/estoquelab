@@ -135,13 +135,20 @@ if not df.empty:
         quantidade_atual = df.loc[idx, "quantidade_atual"]
 
         if quantidade_retirada > quantidade_atual:
-            st.error("❌ Quantidade maior que o estoque!")
-        else:
-            nova_qtd = quantidade_atual - quantidade_retirada
+    st.error("❌ Quantidade maior que o estoque!")
 
-            # Atualiza na planilha
-            sheet.update_cell(idx + 2, 3, float(nova_qtd))
+else:
+    nova_qtd = quantidade_atual - quantidade_retirada
 
-            st.success("✅ Estoque atualizado!")
-            st.cache_data.clear()
-            st.rerun()
+    if nova_qtd == 0:
+        # Deleta a linha (lote acabou)
+        sheet.delete_rows(idx + 2)
+        st.warning("🗑️ Lote zerado e removido do estoque!")
+
+    else:
+        # Atualiza normalmente
+        sheet.update_cell(idx + 2, 3, int(nova_qtd))
+        st.success("✅ Estoque atualizado!")
+
+    st.cache_data.clear()
+    st.rerun()
