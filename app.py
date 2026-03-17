@@ -134,7 +134,7 @@ if not df.empty:
 
         quantidade_atual = df.loc[idx, "quantidade_atual"]
 
-        if quantidade_retirada > quantidade_atual:
+    if quantidade_retirada > quantidade_atual:
     st.error("❌ Quantidade maior que o estoque!")
 
 else:
