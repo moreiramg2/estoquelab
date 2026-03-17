@@ -1,58 +1,59 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2.service_account import Credentials
 
-st.set_page_config(page_title="Estoque Lab", layout="wide")
+# =========================
+# CONFIG GOOGLE SHEETS
+# =========================
+SHEET_ID = "1tmsV_1h78N3NINJZ6yj6OUGOVxbgeQQikadIzTEKyGk"
 
-# ===== CONECTAR GOOGLE SHEETS =====
-scope = ["https://spreadsheets.google.com/feeds",
-         "https://www.googleapis.com/auth/drive"]
+scope = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive"
+]
 
-creds = ServiceAccountCredentials.from_json_keyfile_dict(
-    st.secrets["gcp_service_account"], scope)
+creds = Credentials.from_service_account_info(
+    st.secrets["gcp_service_account"],
+    scopes=scope
+)
 
 client = gspread.authorize(creds)
-
-SHEET_ID = "1tmsV_1h78N3NINJZ6yj6OUGOVxbgeQQikadIzTEKyGk"
 sheet = client.open_by_key(SHEET_ID).sheet1
 
-# ===== CACHE =====
+# =========================
+# FUNÇÃO PRA CARREGAR DADOS
+# =========================
 @st.cache_data(ttl=60)
-def carregar_dados():
+def load_data():
     data = sheet.get_all_records()
-    return pd.DataFrame(data)
+    df = pd.DataFrame(data)
 
-df = carregar_dados()
+    if df.empty:
+        return pd.DataFrame(columns=["nome", "lote", "quantidade", "status_validacao"])
 
-# ===== GARANTIR COLUNAS =====
-if df.empty:
-    df = pd.DataFrame(columns=[
-        "nome", "lote", "quantidade_atual",
-        "quantidade_minima", "validade",
-        "status_validacao", "local"
-    ])
+    return df
 
-df["validade"] = pd.to_datetime(df["validade"], errors='coerce')
+df = load_data()
 
-# ===== TÍTULO =====
-st.title("🧪 Controle de Estoque do Laboratório")
+# =========================
+# TÍTULO
+# =========================
+st.title("🧪 Estoque de Reagentes")
 
-# ===== FORMULÁRIO =====
-st.subheader("➕ Adicionar novo lote")
+# =========================
+# CADASTRAR REAGENTE
+# =========================
+st.subheader("➕ Adicionar reagente")
 
-with st.form("formulario"):
+with st.form("add_form"):
     nome = st.text_input("Nome do reagente")
     lote = st.text_input("Lote")
-    quantidade = st.number_input("Quantidade atual", min_value=0)
-    minimo = st.number_input("Quantidade mínima", min_value=0)
-    validade = st.date_input("Validade")
+    quantidade = st.number_input("Quantidade", min_value=1)
     status_validacao = st.selectbox(
         "Status de validação",
         ["Aprovado", "Pendente", "Reprovado"]
     )
-    local = st.text_input("Local")
 
     submitted = st.form_submit_button("Adicionar")
 
@@ -60,62 +61,28 @@ with st.form("formulario"):
         sheet.append_row([
             nome,
             lote,
-            quantidade,
-            minimo,
-            str(validade),
-            status_validacao,
-            local
+            int(quantidade),
+            status_validacao
         ])
-        st.success("✅ Lote adicionado!")
+        st.success("✅ Reagente adicionado!")
         st.cache_data.clear()
         st.rerun()
 
-# ===== REGRAS =====
-criticos = df[df["quantidade_atual"] <= df["quantidade_minima"]]
-vencendo = df[df["validade"] <= datetime.now() + pd.Timedelta(days=30)]
-
-# ===== CARDS =====
-col1, col2, col3 = st.columns(3)
-
-col1.metric("📦 Total de lotes", len(df))
-col2.metric("⚠️ Críticos", len(criticos))
-col3.metric("⏳ Vencendo", len(vencendo))
-
-st.divider()
-
-# ===== STATUS =====
-def status(row):
-    if row["status_validacao"] == "Reprovado":
-        return "⛔ Reprovado"
-    elif row["quantidade_atual"] <= row["quantidade_minima"]:
-        return "🔴 Crítico"
-    elif row["validade"] <= datetime.now() + pd.Timedelta(days=30):
-        return "🟡 Vencendo"
-    else:
-        return "🟢 OK"
+# =========================
+# MOSTRAR ESTOQUE
+# =========================
+st.subheader("📦 Estoque atual")
 
 if not df.empty:
-    df["Status"] = df.apply(status, axis=1)
+    df["id_item"] = df["nome"].astype(str) + " | Lote: " + df["lote"].astype(str)
+    st.dataframe(df)
 
-# ===== FILTRO (NOVO 🔍) =====
-busca = st.text_input("🔍 Buscar reagente")
-
-if busca:
-    df = df[df["nome"].str.contains(busca, case=False, na=False)]
-
-# ===== TABELA =====
-st.dataframe(df, use_container_width=True)
-st.divider()
-st.subheader("➖ Retirar do estoque")
+# =========================
+# RETIRAR REAGENTE
+# =========================
+st.subheader("➖ Retirar reagente")
 
 if not df.empty:
-
-    # Criar identificação única (nome + lote)
-    df["id_item"] = (
-    df["nome"].fillna("Sem nome").astype(str) +
-    " | Lote: " +
-    df["lote"].fillna("Sem lote").astype(str)
-)
 
     item_selecionado = st.selectbox(
         "Selecione o item",
@@ -124,31 +91,33 @@ if not df.empty:
 
     quantidade_retirada = st.number_input(
         "Quantidade a retirar",
-        min_value=0
+        min_value=1
     )
 
     if st.button("Retirar"):
 
-        # Encontrar índice do item
         idx = df[df["id_item"] == item_selecionado].index[0]
 
-        quantidade_atual = df.loc[idx, "quantidade_atual"]
+        quantidade_atual = int(df.loc[idx, "quantidade"])
 
-    if quantidade_retirada > quantidade_atual:
-        st.error("❌ Quantidade maior que o estoque!")
+        if quantidade_retirada > quantidade_atual:
+            st.error("❌ Quantidade maior que o estoque!")
+
+        else:
+            nova_qtd = quantidade_atual - quantidade_retirada
+
+            if nova_qtd == 0:
+                # Deleta linha quando zera
+                sheet.delete_rows(idx + 2)
+                st.warning("🗑️ Lote zerado e removido!")
+
+            else:
+                # Atualiza quantidade
+                sheet.update_cell(idx + 2, 3, int(nova_qtd))
+                st.success("✅ Estoque atualizado!")
+
+            st.cache_data.clear()
+            st.rerun()
 
 else:
-    nova_qtd = quantidade_atual - quantidade_retirada
-
-    if nova_qtd == 0:
-        # Deleta a linha (lote acabou)
-        sheet.delete_rows(idx + 2)
-        st.warning("🗑️ Lote zerado e removido do estoque!")
-
-    else:
-        # Atualiza normalmente
-        sheet.update_cell(idx + 2, 3, int(nova_qtd))
-        st.success("✅ Estoque atualizado!")
-
-    st.cache_data.clear()
-    st.rerun()
+    st.info("Nenhum item cadastrado ainda.")
