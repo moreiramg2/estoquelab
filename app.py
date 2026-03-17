@@ -140,7 +140,7 @@ if not df.empty:
             nova_qtd = quantidade_atual - quantidade_retirada
 
             # Atualiza na planilha
-            sheet.update_cell(idx + 2, 3, nova_qtd)
+            sheet.update_cell(idx + 2, 3, float(nova_qtd))
 
             st.success("✅ Estoque atualizado!")
             st.cache_data.clear()
