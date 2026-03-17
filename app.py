@@ -6,7 +6,7 @@ from google.oauth2.service_account import Credentials
 # =========================
 # CONFIG GOOGLE SHEETS
 # =========================
-SHEET_ID = "COLE_AQUI_O_ID_DA_PLANILHA"
+SHEET_ID = "1tmsV_1h78N3NINJZ6yj6OUGOVxbgeQQikadIzTEKyGk"
 
 scope = [
     "https://www.googleapis.com/auth/spreadsheets",
