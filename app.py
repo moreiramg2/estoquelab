@@ -130,7 +130,11 @@ with tab1:
                 return ["background-color: #f8d7da"]*len(row)
             return [""]*len(row)
 
-        df["id_item"] = df["nome"] + " | Lote: " + df["lote"]
+        df["id_item"] = (
+    df["nome"].astype(str)
+    + " | Lote: " + df["lote"].astype(str)
+    + " | Qtd: " + df["quantidade"].astype(str)
+)
 
         st.dataframe(df.style.apply(highlight, axis=1), use_container_width=True)
 
