@@ -8,21 +8,28 @@ from datetime import datetime
 # =========================
 # CONFIG
 # =========================
-st.set_page_config(page_title="Estoque Lab Pro", layout="wide", page_icon="🧪")
+st.set_page_config(page_title="Estoque Lab Pro", layout="wide")
 
-# 🔥 ESTILO PROFISSIONAL
+# 🌙 DARK MODE + UI MELHOR
 st.markdown("""
 <style>
-.main {
-    background-color: #f5f7fa;
+body {
+    background-color: #0e1117;
+    color: white;
+}
+.stApp {
+    background-color: #0e1117;
+}
+.sidebar .sidebar-content {
+    background-color: #111827;
 }
 .block-container {
     padding-top: 2rem;
 }
 .stMetric {
-    background-color: white;
+    background-color: #1f2937;
     padding: 15px;
-    border-radius: 10px;
+    border-radius: 12px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -43,23 +50,44 @@ client = gspread.authorize(creds)
 
 aba_estoque = client.open_by_key(SHEET_ID).worksheet("estoque")
 aba_historico = client.open_by_key(SHEET_ID).worksheet("historico")
+aba_usuarios = client.open_by_key(SHEET_ID).worksheet("usuarios")
 
 # =========================
-# LOGIN
+# CARREGAR USUÁRIOS
+# =========================
+def load_users():
+    df = pd.DataFrame(aba_usuarios.get_all_records())
+    if df.empty:
+        return pd.DataFrame(columns=["usuario","senha","tipo"])
+    df.columns = df.columns.str.strip().str.lower()
+    return df
+
+usuarios_df = load_users()
+
+# =========================
+# LOGIN REAL
 # =========================
 if "logado" not in st.session_state:
     st.session_state.logado = False
 
 if not st.session_state.logado:
+
     st.title("🔐 Login")
 
     user = st.text_input("Usuário")
     senha = st.text_input("Senha", type="password")
 
     if st.button("Entrar"):
-        if user == "admin" and senha == "123":
+
+        user_row = usuarios_df[
+            (usuarios_df["usuario"] == user) &
+            (usuarios_df["senha"] == senha)
+        ]
+
+        if not user_row.empty:
             st.session_state.logado = True
             st.session_state.usuario = user
+            st.session_state.tipo = user_row.iloc[0]["tipo"]
             st.rerun()
         else:
             st.error("Login inválido")
@@ -74,7 +102,8 @@ menu = st.sidebar.selectbox(
     ["Dashboard", "Cadastro", "Retirada", "Relatórios"]
 )
 
-st.sidebar.success(f"Logado como: {st.session_state.usuario}")
+st.sidebar.markdown(f"👤 **{st.session_state.usuario}**")
+st.sidebar.markdown(f"🔑 {st.session_state.tipo}")
 
 # =========================
 # LOAD DADOS
@@ -83,29 +112,20 @@ def load_data():
     df = pd.DataFrame(aba_estoque.get_all_records())
     if df.empty:
         return pd.DataFrame(columns=["nome","lote","quantidade","minimo","status_validacao","validade"])
-
-    df.columns = df.columns.str.strip().str.lower()
+    df.columns = df.columns.str.lower()
     df["quantidade"] = pd.to_numeric(df["quantidade"], errors="coerce")
     df["minimo"] = pd.to_numeric(df["minimo"], errors="coerce")
     df["validade"] = pd.to_datetime(df["validade"], errors="coerce")
     return df
 
-
 def load_hist():
     df = pd.DataFrame(aba_historico.get_all_records())
     if df.empty:
         return pd.DataFrame(columns=["nome","lote","quantidade_retirada","data","usuario"])
-
-    df.columns = df.columns.str.strip().str.lower()
-
-    if "quantidade_retirada" not in df.columns:
-        df["quantidade_retirada"] = df.get("quantidade", 0)
-
+    df.columns = df.columns.str.lower()
     df["quantidade_retirada"] = pd.to_numeric(df["quantidade_retirada"], errors="coerce")
     df["data"] = pd.to_datetime(df["data"], errors="coerce")
-
     return df
-
 
 df = load_data()
 hist = load_hist()
@@ -123,75 +143,34 @@ if menu == "Dashboard":
     if not df.empty:
 
         col1, col2, col3 = st.columns(3)
+        col1.metric("Lotes", len(df))
+        col2.metric("Estoque baixo", len(df[df["quantidade"] <= df["minimo"]]))
+        col3.metric("Vencendo", len(df[df["validade"] <= datetime.now() + pd.Timedelta(days=30)]))
 
-        col1.metric("📦 Lotes", len(df))
-        col2.metric("⚠️ Estoque baixo", len(df[df["quantidade"] <= df["minimo"]]))
-        col3.metric("📅 Vencendo", len(df[df["validade"] <= datetime.now() + pd.Timedelta(days=30)]))
-
-        st.divider()
-
-        # ALERTAS
-        baixo = df[df["quantidade"] <= df["minimo"]]
-        vencendo = df[df["validade"] <= datetime.now() + pd.Timedelta(days=30)]
-
-        if not baixo.empty:
-            st.warning("Itens com estoque baixo")
-
-        if not vencendo.empty:
-            st.error("Itens próximos do vencimento")
-
-        st.divider()
-
-        # ESTOQUE
-        estoque_plot = df.groupby("nome")["quantidade"].sum().reset_index()
-
-        fig1 = px.bar(estoque_plot, x="nome", y="quantidade", color="nome")
+        # gráfico estoque
+        fig1 = px.bar(df.groupby("nome")["quantidade"].sum().reset_index(),
+                      x="nome", y="quantidade", color="nome")
         st.plotly_chart(fig1, use_container_width=True)
 
-        # CONSUMO
+        # consumo
         if not hist.empty:
-
-            hist["nome"] = hist["nome"].astype(str)
             consumo = hist.groupby(["data","nome"])["quantidade_retirada"].sum().reset_index()
-
             consumo["acumulado"] = consumo.groupby("nome")["quantidade_retirada"].cumsum()
 
-            fig2 = px.line(
-                consumo,
-                x="data",
-                y="acumulado",
-                color="nome",
-                markers=True
-            )
-
+            fig2 = px.line(consumo, x="data", y="acumulado", color="nome")
             st.plotly_chart(fig2, use_container_width=True)
-
-            # PREVISÃO
-            st.subheader("⏳ Previsão de estoque")
-
-            previsoes = []
-
-            for nome in df["nome"].unique():
-                consumo_total = hist[hist["nome"] == nome]["quantidade_retirada"].sum()
-                dias = (hist["data"].max() - hist["data"].min()).days
-
-                if dias > 0 and consumo_total > 0:
-                    media = consumo_total / dias
-                    estoque = df[df["nome"] == nome]["quantidade"].sum()
-                    dias_rest = estoque / media
-
-                    previsoes.append([nome, round(dias_rest,1)])
-
-            if previsoes:
-                st.dataframe(pd.DataFrame(previsoes, columns=["Reagente","Dias restantes"]))
 
     else:
         st.info("Sem dados")
 
 # =========================
-# CADASTRO
+# CADASTRO (ADMIN ONLY)
 # =========================
 elif menu == "Cadastro":
+
+    if st.session_state.tipo != "admin":
+        st.warning("Acesso restrito")
+        st.stop()
 
     st.title("➕ Cadastro")
 
@@ -219,9 +198,7 @@ elif menu == "Retirada":
 
     if not df.empty:
 
-        df["nome"] = df["nome"].astype(str)
-        df["lote"] = df["lote"].astype(str)
-        df["id"] = df["nome"] + " | " + df["lote"]
+        df["id"] = df["nome"].astype(str) + " | " + df["lote"].astype(str)
 
         item = st.selectbox("Item", df["id"])
         qtd = st.number_input("Quantidade", min_value=1)
@@ -237,12 +214,9 @@ elif menu == "Retirada":
             else:
                 nova = atual - qtd
 
-                nome = str(df.loc[idx,"nome"])
-                lote = str(df.loc[idx,"lote"])
-
                 aba_historico.append_row([
-                    nome,
-                    lote,
+                    str(df.loc[idx,"nome"]),
+                    str(df.loc[idx,"lote"]),
                     int(qtd),
                     datetime.now().strftime("%Y-%m-%d"),
                     st.session_state.usuario
@@ -264,17 +238,10 @@ elif menu == "Relatórios":
     st.title("📄 Relatórios")
 
     if not hist.empty:
-
         st.dataframe(hist, use_container_width=True)
 
         csv = hist.to_csv(index=False)
 
-        st.download_button(
-            "📥 Baixar CSV",
-            csv,
-            "relatorio.csv",
-            "text/csv"
-        )
-
+        st.download_button("📥 Baixar CSV", csv, "relatorio.csv")
     else:
-        st.info("Sem histórico")
+        st.info("Sem dados")
