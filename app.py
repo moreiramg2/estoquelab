@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import gspread
+import plotly.express as px
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 
@@ -23,8 +24,7 @@ creds = Credentials.from_service_account_info(
 
 client = gspread.authorize(creds)
 
-# 🔥 AJUSTE AQUI SE NECESSÁRIO
-aba_estoque = client.open_by_key(SHEET_ID).worksheet("estoque")
+aba_estoque = client.open_by_key(SHEET_ID).worksheet("Página1")
 aba_historico = client.open_by_key(SHEET_ID).worksheet("historico")
 
 # =========================
@@ -41,9 +41,7 @@ def load_data():
 
     df["quantidade"] = pd.to_numeric(df["quantidade"], errors="coerce")
     df["minimo"] = pd.to_numeric(df["minimo"], errors="coerce")
-
-    if "validade" in df.columns:
-        df["validade"] = pd.to_datetime(df["validade"], errors="coerce")
+    df["validade"] = pd.to_datetime(df["validade"], errors="coerce")
 
     return df
 
@@ -56,6 +54,11 @@ def load_historico():
         return pd.DataFrame(columns=["nome","lote","quantidade_retirada","data"])
 
     df.columns = df.columns.str.strip().str.lower()
+
+    # fallback inteligente
+    if "quantidade_retirada" not in df.columns:
+        if "quantidade" in df.columns:
+            df["quantidade_retirada"] = df["quantidade"]
 
     df["quantidade_retirada"] = pd.to_numeric(df["quantidade_retirada"], errors="coerce")
     df["data"] = pd.to_datetime(df["data"], errors="coerce")
@@ -91,6 +94,7 @@ with tab1:
 
         st.divider()
 
+        # ALERTAS
         st.subheader("🚨 Alertas")
 
         estoque_baixo = df[df["quantidade"] <= df["minimo"]]
@@ -107,19 +111,88 @@ with tab1:
 
         st.divider()
 
+        # GRAFICO ESTOQUE
         st.subheader("📊 Estoque por reagente")
-        st.bar_chart(df.groupby("nome")["quantidade"].sum())
+        estoque_plot = df.groupby("nome")["quantidade"].sum().reset_index()
 
-        st.subheader("📉 Consumo ao longo do tempo")
+        fig1 = px.bar(
+            estoque_plot,
+            x="nome",
+            y="quantidade",
+            color="nome",
+            title="Estoque atual"
+        )
+
+        st.plotly_chart(fig1, use_container_width=True)
+
+        # CONSUMO
+        st.subheader("📉 Consumo por reagente")
 
         if not hist.empty:
-            consumo = hist.groupby("data")["quantidade_retirada"].sum()
-            st.line_chart(consumo)
+
+            hist_plot = hist.copy()
+            hist_plot["nome"] = hist_plot["nome"].astype(str)
+            hist_plot["data"] = pd.to_datetime(hist_plot["data"])
+
+            consumo = hist_plot.groupby(["data","nome"])["quantidade_retirada"].sum().reset_index()
+
+            # acumulado
+            consumo["acumulado"] = consumo.groupby("nome")["quantidade_retirada"].cumsum()
+
+            fig2 = px.line(
+                consumo,
+                x="data",
+                y="acumulado",
+                color="nome",
+                markers=True,
+                title="Consumo acumulado"
+            )
+
+            st.plotly_chart(fig2, use_container_width=True)
+
+            # TOP CONSUMO
+            st.subheader("🔥 Reagentes mais consumidos")
+
+            top = hist.groupby("nome")["quantidade_retirada"].sum().sort_values(ascending=False)
+
+            st.bar_chart(top)
+
+            # PREVISÃO 🔥🔥🔥
+            st.subheader("⏳ Previsão de término de estoque")
+
+            previsoes = []
+
+            for nome in df["nome"].unique():
+
+                consumo_total = hist[hist["nome"] == nome]["quantidade_retirada"].sum()
+
+                dias = (hist["data"].max() - hist["data"].min()).days
+
+                if dias > 0 and consumo_total > 0:
+
+                    consumo_medio = consumo_total / dias
+
+                    estoque_atual = df[df["nome"] == nome]["quantidade"].sum()
+
+                    dias_restantes = estoque_atual / consumo_medio
+
+                    previsoes.append({
+                        "Reagente": nome,
+                        "Dias restantes": round(dias_restantes,1)
+                    })
+
+            if previsoes:
+                df_prev = pd.DataFrame(previsoes).sort_values("Dias restantes")
+                st.dataframe(df_prev, use_container_width=True)
+            else:
+                st.info("Sem dados suficientes para previsão")
+
         else:
-            st.info("Sem dados de consumo")
+            st.info("Sem histórico ainda")
 
         st.divider()
 
+        # TABELA
         st.subheader("📋 Estoque atual")
 
         def highlight(row):
@@ -129,16 +202,12 @@ with tab1:
                 return ["background-color: #f8d7da"]*len(row)
             return [""]*len(row)
 
-        # 🔥 CORREÇÃO AQUI
         df["nome"] = df["nome"].fillna("").astype(str)
         df["lote"] = df["lote"].fillna("").astype(str)
 
         df["id_item"] = df["nome"] + " | Lote: " + df["lote"]
 
         st.dataframe(df.style.apply(highlight, axis=1), use_container_width=True)
-
-    else:
-        st.info("Sem dados")
 
 # =========================
 # CADASTRO
@@ -186,7 +255,6 @@ with tab3:
             else:
                 nova = atual - qtd
 
-                # 🔥 REGISTRO HISTÓRICO CORRIGIDO
                 nome = str(df.loc[idx,"nome"])
                 lote = str(df.loc[idx,"lote"])
                 data = datetime.now().strftime("%Y-%m-%d")
