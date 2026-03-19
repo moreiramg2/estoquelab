@@ -10,21 +10,15 @@ from datetime import datetime
 # =========================
 st.set_page_config(page_title="Estoque Lab Pro", layout="wide")
 
-# 🌙 DARK MODE + UI MELHOR
+# 🌙 DARK MODE
 st.markdown("""
 <style>
-body {
+.stApp {
     background-color: #0e1117;
     color: white;
 }
-.stApp {
-    background-color: #0e1117;
-}
-.sidebar .sidebar-content {
+section[data-testid="stSidebar"] {
     background-color: #111827;
-}
-.block-container {
-    padding-top: 2rem;
 }
 .stMetric {
     background-color: #1f2937;
@@ -34,6 +28,21 @@ body {
 </style>
 """, unsafe_allow_html=True)
 
+# =========================
+# SESSION STATE SAFE
+# =========================
+if "logado" not in st.session_state:
+    st.session_state.logado = False
+
+if "usuario" not in st.session_state:
+    st.session_state.usuario = None
+
+if "tipo" not in st.session_state:
+    st.session_state.tipo = None
+
+# =========================
+# GOOGLE SHEETS
+# =========================
 SHEET_ID = "1tmsV_1h78N3NINJZ6yj6OUGOVxbgeQQikadIzTEKyGk"
 
 scope = [
@@ -53,7 +62,7 @@ aba_historico = client.open_by_key(SHEET_ID).worksheet("historico")
 aba_usuarios = client.open_by_key(SHEET_ID).worksheet("usuarios")
 
 # =========================
-# CARREGAR USUÁRIOS
+# LOAD USERS
 # =========================
 def load_users():
     df = pd.DataFrame(aba_usuarios.get_all_records())
@@ -65,11 +74,8 @@ def load_users():
 usuarios_df = load_users()
 
 # =========================
-# LOGIN REAL
+# LOGIN
 # =========================
-if "logado" not in st.session_state:
-    st.session_state.logado = False
-
 if not st.session_state.logado:
 
     st.title("🔐 Login")
@@ -95,36 +101,47 @@ if not st.session_state.logado:
     st.stop()
 
 # =========================
-# MENU
+# SIDEBAR
 # =========================
 menu = st.sidebar.selectbox(
     "📌 Menu",
     ["Dashboard", "Cadastro", "Retirada", "Relatórios"]
 )
 
-st.sidebar.markdown(f"👤 **{st.session_state.usuario}**")
-st.sidebar.markdown(f"🔑 {st.session_state.tipo}")
+usuario = st.session_state.get("usuario", "desconhecido")
+tipo_usuario = st.session_state.get("tipo", "desconhecido")
+
+st.sidebar.markdown(f"👤 **{usuario}**")
+st.sidebar.markdown(f"🔑 {tipo_usuario}")
 
 # =========================
-# LOAD DADOS
+# LOAD DATA
 # =========================
 def load_data():
     df = pd.DataFrame(aba_estoque.get_all_records())
     if df.empty:
         return pd.DataFrame(columns=["nome","lote","quantidade","minimo","status_validacao","validade"])
-    df.columns = df.columns.str.lower()
+
+    df.columns = df.columns.str.strip().str.lower()
     df["quantidade"] = pd.to_numeric(df["quantidade"], errors="coerce")
     df["minimo"] = pd.to_numeric(df["minimo"], errors="coerce")
     df["validade"] = pd.to_datetime(df["validade"], errors="coerce")
+
     return df
 
 def load_hist():
     df = pd.DataFrame(aba_historico.get_all_records())
     if df.empty:
         return pd.DataFrame(columns=["nome","lote","quantidade_retirada","data","usuario"])
-    df.columns = df.columns.str.lower()
+
+    df.columns = df.columns.str.strip().str.lower()
+
+    if "quantidade_retirada" not in df.columns:
+        df["quantidade_retirada"] = df.get("quantidade", 0)
+
     df["quantidade_retirada"] = pd.to_numeric(df["quantidade_retirada"], errors="coerce")
     df["data"] = pd.to_datetime(df["data"], errors="coerce")
+
     return df
 
 df = load_data()
@@ -143,16 +160,17 @@ if menu == "Dashboard":
     if not df.empty:
 
         col1, col2, col3 = st.columns(3)
+
         col1.metric("Lotes", len(df))
         col2.metric("Estoque baixo", len(df[df["quantidade"] <= df["minimo"]]))
         col3.metric("Vencendo", len(df[df["validade"] <= datetime.now() + pd.Timedelta(days=30)]))
 
-        # gráfico estoque
-        fig1 = px.bar(df.groupby("nome")["quantidade"].sum().reset_index(),
-                      x="nome", y="quantidade", color="nome")
+        fig1 = px.bar(
+            df.groupby("nome")["quantidade"].sum().reset_index(),
+            x="nome", y="quantidade", color="nome"
+        )
         st.plotly_chart(fig1, use_container_width=True)
 
-        # consumo
         if not hist.empty:
             consumo = hist.groupby(["data","nome"])["quantidade_retirada"].sum().reset_index()
             consumo["acumulado"] = consumo.groupby("nome")["quantidade_retirada"].cumsum()
@@ -164,7 +182,7 @@ if menu == "Dashboard":
         st.info("Sem dados")
 
 # =========================
-# CADASTRO (ADMIN ONLY)
+# CADASTRO (ADMIN)
 # =========================
 elif menu == "Cadastro":
 
@@ -219,7 +237,7 @@ elif menu == "Retirada":
                     str(df.loc[idx,"lote"]),
                     int(qtd),
                     datetime.now().strftime("%Y-%m-%d"),
-                    st.session_state.usuario
+                    usuario
                 ])
 
                 if nova == 0:
@@ -243,5 +261,6 @@ elif menu == "Relatórios":
         csv = hist.to_csv(index=False)
 
         st.download_button("📥 Baixar CSV", csv, "relatorio.csv")
+
     else:
         st.info("Sem dados")
