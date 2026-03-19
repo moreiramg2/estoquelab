@@ -66,9 +66,17 @@ aba_usuarios = client.open_by_key(SHEET_ID).worksheet("usuarios")
 # =========================
 def load_users():
     df = pd.DataFrame(aba_usuarios.get_all_records())
+
     if df.empty:
         return pd.DataFrame(columns=["usuario","senha","tipo"])
+
     df.columns = df.columns.str.strip().str.lower()
+
+    # limpa espaços invisíveis
+    df["usuario"] = df["usuario"].astype(str).str.strip().str.lower()
+    df["senha"] = df["senha"].astype(str).str.strip()
+    df["tipo"] = df["tipo"].astype(str).str.strip().str.lower()
+
     return df
 
 usuarios_df = load_users()
