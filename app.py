@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
+from datetime import datetime
 
 # =========================
 # CONFIG DA PÁGINA
@@ -38,9 +39,13 @@ def load_data():
     df = pd.DataFrame(data)
 
     if df.empty:
-        return pd.DataFrame(columns=["nome", "lote", "quantidade", "status_validacao"])
+        return pd.DataFrame(columns=["nome", "lote", "quantidade", "status_validacao", "validade"])
 
     df.columns = df.columns.str.strip().str.lower()
+
+    if "validade" in df.columns:
+        df["validade"] = pd.to_datetime(df["validade"], errors="coerce")
+
     return df
 
 df = load_data()
@@ -79,37 +84,47 @@ with tab1:
 
         st.divider()
 
-        # ===== GRAFICOS =====
-        col1, col2 = st.columns(2)
+        # ===== ALERTAS =====
+        st.subheader("🚨 Alertas")
 
-        with col1:
-            st.subheader("📊 Quantidade por reagente")
-            grafico_qtd = df.groupby("nome")["quantidade"].sum()
-            st.bar_chart(grafico_qtd)
+        hoje = datetime.now()
 
-        with col2:
-            st.subheader("📊 Status dos reagentes")
-            grafico_status = df["status_validacao"].value_counts()
-            st.bar_chart(grafico_status)
+        estoque_baixo = df[df["quantidade"] <= 5]
+        vencendo = df[df["validade"] <= hoje + pd.Timedelta(days=30)]
+
+        if not estoque_baixo.empty:
+            st.warning(f"⚠️ {len(estoque_baixo)} itens com estoque baixo")
+
+        if not vencendo.empty:
+            st.error(f"📅 {len(vencendo)} itens próximos do vencimento")
+
+        if estoque_baixo.empty and vencendo.empty:
+            st.success("✅ Tudo sob controle!")
+
+        st.divider()
+
+        # ===== GRAFICO =====
+        st.subheader("📊 Quantidade por reagente")
+
+        grafico_qtd = df.groupby("nome")["quantidade"].sum().sort_values(ascending=False)
+        st.bar_chart(grafico_qtd)
 
         st.divider()
 
         # ===== TABELA =====
         st.subheader("📋 Estoque atual")
 
-        def highlight_status(val):
-            if val == "Reprovado":
-                return "color: red; font-weight: bold"
-            elif val == "Aprovado":
-                return "color: green; font-weight: bold"
-            elif val == "Pendente":
-                return "color: orange; font-weight: bold"
-            return ""
+        def highlight_row(row):
+            if row["quantidade"] <= 5:
+                return ["background-color: #fff3cd"] * len(row)
+            elif pd.notnull(row["validade"]) and row["validade"] <= hoje + pd.Timedelta(days=30):
+                return ["background-color: #f8d7da"] * len(row)
+            return [""] * len(row)
 
         df["id_item"] = df["nome"].astype(str) + " | Lote: " + df["lote"].astype(str)
 
         st.dataframe(
-            df.style.applymap(highlight_status, subset=["status_validacao"]),
+            df.style.apply(highlight_row, axis=1),
             use_container_width=True
         )
 
@@ -127,6 +142,7 @@ with tab2:
         nome = st.text_input("Nome do reagente")
         lote = st.text_input("Lote")
         quantidade = st.number_input("Quantidade", min_value=1)
+        validade = st.date_input("Validade")
         status_validacao = st.selectbox(
             "Status",
             ["Aprovado", "Pendente", "Reprovado"]
@@ -139,7 +155,8 @@ with tab2:
                 nome,
                 lote,
                 int(quantidade),
-                status_validacao
+                status_validacao,
+                str(validade)
             ])
             st.success("✅ Adicionado com sucesso!")
             st.rerun()
@@ -154,7 +171,6 @@ with tab3:
     if not df.empty:
 
         item = st.selectbox("Selecione", df["id_item"])
-
         qtd = st.number_input("Quantidade a retirar", min_value=1)
 
         if st.button("Retirar"):
