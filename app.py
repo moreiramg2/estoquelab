@@ -7,11 +7,7 @@ from datetime import datetime
 # =========================
 # CONFIG
 # =========================
-st.set_page_config(
-    page_title="Estoque Lab",
-    layout="wide",
-    page_icon="🧪"
-)
+st.set_page_config(page_title="Estoque Lab", layout="wide", page_icon="🧪")
 
 SHEET_ID = "1tmsV_1h78N3NINJZ6yj6OUGOVxbgeQQikadIzTEKyGk"
 
@@ -27,6 +23,7 @@ creds = Credentials.from_service_account_info(
 
 client = gspread.authorize(creds)
 
+# 🔥 AJUSTE AQUI SE NECESSÁRIO
 aba_estoque = client.open_by_key(SHEET_ID).worksheet("estoque")
 aba_historico = client.open_by_key(SHEET_ID).worksheet("historico")
 
@@ -41,11 +38,15 @@ def load_data():
         return pd.DataFrame(columns=["nome","lote","quantidade","minimo","status_validacao","validade"])
 
     df.columns = df.columns.str.strip().str.lower()
+
     df["quantidade"] = pd.to_numeric(df["quantidade"], errors="coerce")
     df["minimo"] = pd.to_numeric(df["minimo"], errors="coerce")
-    df["validade"] = pd.to_datetime(df["validade"], errors="coerce")
+
+    if "validade" in df.columns:
+        df["validade"] = pd.to_datetime(df["validade"], errors="coerce")
 
     return df
+
 
 def load_historico():
     data = aba_historico.get_all_records()
@@ -55,10 +56,12 @@ def load_historico():
         return pd.DataFrame(columns=["nome","lote","quantidade_retirada","data"])
 
     df.columns = df.columns.str.strip().str.lower()
+
     df["quantidade_retirada"] = pd.to_numeric(df["quantidade_retirada"], errors="coerce")
     df["data"] = pd.to_datetime(df["data"], errors="coerce")
 
     return df
+
 
 df = load_data()
 hist = load_historico()
@@ -80,15 +83,14 @@ with tab1:
 
     if not df.empty:
 
-        # METRICAS
         col1, col2, col3 = st.columns(3)
+
         col1.metric("📦 Lotes", len(df))
         col2.metric("⚠️ Estoque baixo", len(df[df["quantidade"] <= df["minimo"]]))
         col3.metric("📅 Vencendo", len(df[df["validade"] <= datetime.now() + pd.Timedelta(days=30)]))
 
         st.divider()
 
-        # ALERTAS
         st.subheader("🚨 Alertas")
 
         estoque_baixo = df[df["quantidade"] <= df["minimo"]]
@@ -105,38 +107,38 @@ with tab1:
 
         st.divider()
 
-        # GRAFICO ESTOQUE
-        st.subheader("📊 Estoque atual por reagente")
+        st.subheader("📊 Estoque por reagente")
         st.bar_chart(df.groupby("nome")["quantidade"].sum())
 
-        # GRAFICO CONSUMO
         st.subheader("📉 Consumo ao longo do tempo")
 
         if not hist.empty:
             consumo = hist.groupby("data")["quantidade_retirada"].sum()
             st.line_chart(consumo)
         else:
-            st.info("Sem dados de consumo ainda")
+            st.info("Sem dados de consumo")
 
         st.divider()
 
-        # TABELA
-        st.subheader("📋 Estoque")
+        st.subheader("📋 Estoque atual")
 
         def highlight(row):
             if row["quantidade"] <= row["minimo"]:
                 return ["background-color: #fff3cd"]*len(row)
-            if row["validade"] <= datetime.now() + pd.Timedelta(days=30):
+            if pd.notnull(row["validade"]) and row["validade"] <= datetime.now() + pd.Timedelta(days=30):
                 return ["background-color: #f8d7da"]*len(row)
             return [""]*len(row)
 
-        df["id_item"] = (
-    df["nome"].astype(str)
-    + " | Lote: " + df["lote"].astype(str)
-    + " | Qtd: " + df["quantidade"].astype(str)
-)
+        # 🔥 CORREÇÃO AQUI
+        df["nome"] = df["nome"].fillna("").astype(str)
+        df["lote"] = df["lote"].fillna("").astype(str)
+
+        df["id_item"] = df["nome"] + " | Lote: " + df["lote"]
 
         st.dataframe(df.style.apply(highlight, axis=1), use_container_width=True)
+
+    else:
+        st.info("Sem dados")
 
 # =========================
 # CADASTRO
@@ -152,7 +154,14 @@ with tab2:
         status = st.selectbox("Status", ["Aprovado","Pendente","Reprovado"])
 
         if st.form_submit_button("Adicionar"):
-            aba_estoque.append_row([nome,lote,int(quantidade),int(minimo),status,str(validade)])
+            aba_estoque.append_row([
+                str(nome),
+                str(lote),
+                int(quantidade),
+                int(minimo),
+                str(status),
+                str(validade)
+            ])
             st.success("Adicionado!")
             st.rerun()
 
@@ -177,12 +186,16 @@ with tab3:
             else:
                 nova = atual - qtd
 
-                # REGISTRA HISTORICO 🔥
+                # 🔥 REGISTRO HISTÓRICO CORRIGIDO
+                nome = str(df.loc[idx,"nome"])
+                lote = str(df.loc[idx,"lote"])
+                data = datetime.now().strftime("%Y-%m-%d")
+
                 aba_historico.append_row([
-                    df.loc[idx,"nome"],
-                    df.loc[idx,"lote"],
+                    nome,
+                    lote,
                     int(qtd),
-                    str(datetime.now())
+                    data
                 ])
 
                 if nova == 0:
@@ -194,3 +207,6 @@ with tab3:
                     st.success("Atualizado")
 
                 st.rerun()
+
+    else:
+        st.info("Sem itens no estoque")
