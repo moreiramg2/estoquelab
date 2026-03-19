@@ -4,7 +4,16 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # =========================
-# CONFIG GOOGLE SHEETS
+# CONFIG DA PÁGINA
+# =========================
+st.set_page_config(
+    page_title="Estoque Lab",
+    layout="wide",
+    page_icon="🧪"
+)
+
+# =========================
+# GOOGLE SHEETS
 # =========================
 SHEET_ID = "1tmsV_1h78N3NINJZ6yj6OUGOVxbgeQQikadIzTEKyGk"
 
@@ -22,7 +31,7 @@ client = gspread.authorize(creds)
 sheet = client.open_by_key(SHEET_ID).sheet1
 
 # =========================
-# FUNÇÃO PRA CARREGAR DADOS
+# FUNÇÃO DE DADOS
 # =========================
 def load_data():
     data = sheet.get_all_records()
@@ -31,112 +40,143 @@ def load_data():
     if df.empty:
         return pd.DataFrame(columns=["nome", "lote", "quantidade", "status_validacao"])
 
-    # Padroniza nomes das colunas
     df.columns = df.columns.str.strip().str.lower()
-
     return df
 
 df = load_data()
 
-# =========================
-# FILTRA ITENS COM QUANTIDADE > 0
-# =========================
+# Remove itens zerados
 if not df.empty:
     df = df[df["quantidade"] > 0]
 
 # =========================
 # TÍTULO
 # =========================
-st.title("🧪 Estoque de Reagentes")
+st.title("🧪 Sistema de Controle de Estoque")
 
 # =========================
-# CADASTRAR REAGENTE
+# ABAS
 # =========================
-st.subheader("➕ Adicionar reagente")
-
-with st.form("add_form"):
-    nome = st.text_input("Nome do reagente")
-    lote = st.text_input("Lote")
-    quantidade = st.number_input("Quantidade", min_value=1)
-    status_validacao = st.selectbox(
-        "Status de validação",
-        ["Aprovado", "Pendente", "Reprovado"]
-    )
-
-    submitted = st.form_submit_button("Adicionar")
-
-    if submitted:
-        sheet.append_row([
-            nome,
-            lote,
-            int(quantidade),
-            status_validacao
-        ])
-        st.success("✅ Reagente adicionado!")
-        st.cache_data.clear()
-        st.rerun()
+tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "➕ Cadastro", "➖ Retirada"])
 
 # =========================
-# MOSTRAR ESTOQUE COM CORES
+# DASHBOARD
 # =========================
-st.subheader("📦 Estoque atual")
+with tab1:
 
-if not df.empty:
-    df["id_item"] = df["nome"].astype(str) + " | Lote: " + df["lote"].astype(str)
+    if not df.empty:
 
-    # Função pra colorir status
-    def highlight_status(val):
-        if val == "Reprovado":
-            return "color: red; font-weight: bold"
-        elif val == "Aprovado":
-            return "color: green; font-weight: bold"
-        elif val == "Pendente":
-            return "color: orange; font-weight: bold"
-        else:
+        # ===== METRICAS =====
+        col1, col2, col3 = st.columns(3)
+
+        total = len(df)
+        aprovados = len(df[df["status_validacao"] == "Aprovado"])
+        reprovados = len(df[df["status_validacao"] == "Reprovado"])
+
+        col1.metric("📦 Total de lotes", total)
+        col2.metric("✅ Aprovados", aprovados)
+        col3.metric("❌ Reprovados", reprovados)
+
+        st.divider()
+
+        # ===== GRAFICOS =====
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.subheader("📊 Quantidade por reagente")
+            grafico_qtd = df.groupby("nome")["quantidade"].sum()
+            st.bar_chart(grafico_qtd)
+
+        with col2:
+            st.subheader("📊 Status dos reagentes")
+            grafico_status = df["status_validacao"].value_counts()
+            st.bar_chart(grafico_status)
+
+        st.divider()
+
+        # ===== TABELA =====
+        st.subheader("📋 Estoque atual")
+
+        def highlight_status(val):
+            if val == "Reprovado":
+                return "color: red; font-weight: bold"
+            elif val == "Aprovado":
+                return "color: green; font-weight: bold"
+            elif val == "Pendente":
+                return "color: orange; font-weight: bold"
             return ""
 
-    # Aplica cores na coluna de status
-    st.dataframe(df.style.applymap(highlight_status, subset=["status_validacao"]))
-else:
-    st.info("Nenhum item cadastrado ainda.")
+        df["id_item"] = df["nome"].astype(str) + " | Lote: " + df["lote"].astype(str)
+
+        st.dataframe(
+            df.style.applymap(highlight_status, subset=["status_validacao"]),
+            use_container_width=True
+        )
+
+    else:
+        st.info("Nenhum item cadastrado.")
 
 # =========================
-# RETIRAR REAGENTE
+# CADASTRO
 # =========================
-st.subheader("➖ Retirar reagente")
+with tab2:
 
-if not df.empty:
+    st.subheader("➕ Adicionar reagente")
 
-    item_selecionado = st.selectbox(
-        "Selecione o item",
-        df["id_item"]
-    )
+    with st.form("form_add"):
+        nome = st.text_input("Nome do reagente")
+        lote = st.text_input("Lote")
+        quantidade = st.number_input("Quantidade", min_value=1)
+        status_validacao = st.selectbox(
+            "Status",
+            ["Aprovado", "Pendente", "Reprovado"]
+        )
 
-    quantidade_retirada = st.number_input(
-        "Quantidade a retirar",
-        min_value=1
-    )
+        submitted = st.form_submit_button("Adicionar")
 
-    if st.button("Retirar"):
+        if submitted:
+            sheet.append_row([
+                nome,
+                lote,
+                int(quantidade),
+                status_validacao
+            ])
+            st.success("✅ Adicionado com sucesso!")
+            st.rerun()
 
-        idx = df[df["id_item"] == item_selecionado].index[0]
-        quantidade_atual = int(df.loc[idx, "quantidade"])
+# =========================
+# RETIRADA
+# =========================
+with tab3:
 
-        if quantidade_retirada > quantidade_atual:
-            st.error("❌ Quantidade maior que o estoque!")
+    st.subheader("➖ Retirar reagente")
 
-        else:
-            nova_qtd = quantidade_atual - quantidade_retirada
+    if not df.empty:
 
-            if nova_qtd == 0:
-                # Deleta linha quando zera
-                sheet.delete_rows(int(idx) + 2)
-                st.warning("🗑️ Lote zerado e removido do estoque!")
+        item = st.selectbox("Selecione", df["id_item"])
+
+        qtd = st.number_input("Quantidade a retirar", min_value=1)
+
+        if st.button("Retirar"):
+
+            idx = df[df["id_item"] == item].index[0]
+            quantidade_atual = int(df.loc[idx, "quantidade"])
+
+            if qtd > quantidade_atual:
+                st.error("❌ Quantidade maior que o estoque!")
 
             else:
-                # Atualiza quantidade
-                sheet.update_cell(int(idx) + 2, 3, int(nova_qtd))
-                st.success("✅ Estoque atualizado!")
+                nova_qtd = quantidade_atual - qtd
 
-            st.cache_data.clear()
-            st.rerun()
+                if nova_qtd == 0:
+                    sheet.delete_rows(int(idx) + 2)
+                    st.warning("🗑️ Lote removido (zerado)")
+
+                else:
+                    sheet.update_cell(int(idx) + 2, 3, int(nova_qtd))
+                    st.success("✅ Atualizado!")
+
+                st.rerun()
+
+    else:
+        st.info("Sem itens no estoque.")
