@@ -24,7 +24,7 @@ creds = Credentials.from_service_account_info(
 
 client = gspread.authorize(creds)
 
-aba_estoque = client.open_by_key(SHEET_ID).worksheet("Página1")
+aba_estoque = client.open_by_key(SHEET_ID).worksheet("estoque")
 aba_historico = client.open_by_key(SHEET_ID).worksheet("historico")
 
 # =========================
